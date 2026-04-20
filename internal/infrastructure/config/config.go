@@ -1,0 +1,54 @@
+package config
+
+import (
+	"fmt"
+	"os"
+)
+
+type Config struct {
+	ServerPort   string
+	DBHost       string
+	DBPort       string
+	DBUser       string
+	DBPassword   string
+	DBName       string
+	DBSSLMode    string
+	JWTSecret    string
+}
+
+func Load() (*Config, error) {
+	cfg := &Config{
+		ServerPort: getEnv("SERVER_PORT", "3001"),
+		DBHost:     getEnv("DB_HOST", "localhost"),
+		DBPort:     getEnv("DB_PORT", "5432"),
+		DBUser:     mustGetEnv("DB_USER"),
+		DBPassword: mustGetEnv("DB_PASSWORD"),
+		DBName:     mustGetEnv("DB_NAME"),
+		DBSSLMode:  getEnv("DB_SSLMODE", "disable"),
+		JWTSecret:  mustGetEnv("ILIACHALLENGE"),
+	}
+
+	return cfg, nil
+}
+
+func (c *Config) DSN() string {
+	return fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=UTC",
+		c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName, c.DBSSLMode,
+	)
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func mustGetEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		panic(fmt.Sprintf("required env var %q is not set", key))
+	}
+	return v
+}
