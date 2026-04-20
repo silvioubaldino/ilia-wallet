@@ -92,12 +92,11 @@ ilia-wallet/
 ├── internal/
 │   ├── domain/
 │   │   └── transaction/
-│   │       ├── entity.go                  # Transaction entity + Type enum (CREDIT/DEBIT)
-│   │       └── repository.go              # Repository interface (port)
+│   │       └── entity.go                  # Transaction entity + Type enum (CREDIT/DEBIT)
 │   │
 │   ├── usecase/
 │   │   └── transaction/
-│   │       ├── create.go                  # CreateTransaction use case
+│   │       ├── create.go                  # CreateTransaction use case — declara interface Repository local
 │   │       ├── create_test.go
 │   │       ├── list.go                    # ListTransactions use case
 │   │       ├── list_test.go
@@ -121,7 +120,10 @@ ilia-wallet/
 │       ├── config/
 │       │   └── config.go                  # Config struct, Load() from env
 │       └── database/
-│           └── postgres.go                # GORM connection + AutoMigrate
+│           ├── postgres.go                # GORM connection + golang-migrate runner
+│           └── migrations/
+│               ├── 000001_create_transactions.up.sql
+│               └── 000001_create_transactions.down.sql
 │
 ├── pkg/
 │   └── apperrors/
@@ -143,10 +145,16 @@ ilia-wallet/
 ```
 Infrastructure → Adapter → UseCase → Domain
 ```
-- **Domain**: entidades e interfaces de repositório (zero dependências externas)
-- **UseCase**: lógica de negócio, depende apenas do Domain
-- **Adapter**: HTTP handlers e implementação do repositório (GORM), depende de UseCase
-- **Infrastructure**: configuração, DB connection, wiring — depende de tudo
+- **Domain**: apenas entidades (zero dependências externas). Sem interfaces de repositório aqui.
+- **UseCase**: lógica de negócio. Cada usecase declara a interface mínima do repositório que precisa no próprio arquivo (`type repository interface { ... }`).
+- **Adapter/Handler**: declara interfaces mínimas dos usecases que orquestra (`type createUseCase interface { ... }`).
+- **Adapter/Repository**: implementação GORM que satisfaz todas as interfaces declaradas nos usecases (sem vínculo explícito).
+- **Infrastructure**: configuração, DB connection, migrations, wiring — depende de tudo.
+
+### Regra de interface: declare no consumer
+Interfaces são declaradas no package que as **usa**, não no package que as **implementa**.
+Cada arquivo de usecase abre com a interface local que consome do repositório.
+A implementação postgres cobre os métodos necessários — o compilador valida na hora do wiring.
 
 ---
 
@@ -174,12 +182,15 @@ Infrastructure → Adapter → UseCase → Domain
 
 ---
 
-### Stage 2 — Domain + Database Migration
-**Deliverable:** Entidade Transaction definida, tabela criada via AutoMigrate
+### Stage 2 — Domain + Database Migration ✅
+**Deliverable:** Entidade Transaction definida, tabela criada via SQL migration gerenciada
 
-- `internal/domain/transaction/entity.go`
-- `internal/domain/transaction/repository.go` (interface)
-- `internal/infrastructure/database/postgres.go` com AutoMigrate da tabela `transactions`
+- `internal/domain/transaction/entity.go` — entity + Type enum
+- `internal/infrastructure/database/migrations/000001_create_transactions.up.sql` — DDL da tabela
+- `internal/infrastructure/database/migrations/000001_create_transactions.down.sql` — rollback
+- `internal/infrastructure/database/postgres.go` — usa `golang-migrate` + `embed.FS` para rodar migrations antes de abrir a conexão GORM
+
+**Sem** `domain/transaction/repository.go` — interfaces declaradas no consumer (ver Regra de interface acima).
 
 **Verify:** `psql` → `\d transactions` mostra schema correto
 
