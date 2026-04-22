@@ -101,7 +101,7 @@ func TestTransactionHandler_Create(t *testing.T) {
 				uc.On("Execute", *tt.mocks.ucInput).Return(*tt.mocks.ucOutput, tt.mocks.ucErr)
 			}
 
-			h := handler.NewTransactionHandler(uc, &mockListUseCase{})
+			h := handler.NewTransactionHandler(uc, &mockListUseCase{}, &mockBalanceUseCase{})
 
 			router := gin.New()
 			router.POST("/transactions", func(c *gin.Context) {
@@ -196,7 +196,7 @@ func TestTransactionHandler_List(t *testing.T) {
 				uc.On("Execute", tt.mocks.ucInput).Return(tt.mocks.ucOutput, tt.mocks.ucErr)
 			}
 
-			h := handler.NewTransactionHandler(&mockCreateUseCase{}, uc)
+			h := handler.NewTransactionHandler(&mockCreateUseCase{}, uc, &mockBalanceUseCase{})
 
 			router := gin.New()
 			router.GET("/transactions", func(c *gin.Context) {
@@ -210,6 +210,76 @@ func TestTransactionHandler_List(t *testing.T) {
 			}
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, url, nil)
+
+			// Act
+			router.ServeHTTP(w, req)
+
+			// Assert
+			assert.Equal(t, tt.expected.statusCode, w.Code)
+			uc.AssertExpectations(t)
+		})
+	}
+}
+
+func TestTransactionHandler_Balance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var (
+		userID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	)
+
+	type mocks struct {
+		ucInput  usecase.BalanceInput
+		ucOutput int64
+		ucErr    error
+		ucCalled bool
+	}
+	type expected struct {
+		statusCode int
+	}
+
+	tests := map[string]struct {
+		mocks    mocks
+		expected expected
+	}{
+		"should return 500 when usecase fails": {
+			mocks: mocks{
+				ucInput:  usecase.BalanceInput{UserID: userID},
+				ucOutput: 0,
+				ucErr:    assert.AnError,
+				ucCalled: true,
+			},
+			expected: expected{statusCode: http.StatusInternalServerError},
+		},
+		"should return 200 with balance": {
+			mocks: mocks{
+				ucInput:  usecase.BalanceInput{UserID: userID},
+				ucOutput: 70,
+				ucErr:    nil,
+				ucCalled: true,
+			},
+			expected: expected{statusCode: http.StatusOK},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Arrange
+			uc := &mockBalanceUseCase{}
+			if tt.mocks.ucCalled {
+				uc.On("Execute", tt.mocks.ucInput).Return(tt.mocks.ucOutput, tt.mocks.ucErr)
+			}
+
+			h := handler.NewTransactionHandler(&mockCreateUseCase{}, &mockListUseCase{}, uc)
+
+			router := gin.New()
+			router.GET("/balance", func(c *gin.Context) {
+				c.Set(middleware.UserIDKey, userID.String())
+				h.Balance(c)
+			})
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/balance", nil)
 
 			// Act
 			router.ServeHTTP(w, req)

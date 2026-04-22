@@ -12,8 +12,10 @@ func SetupTransaction(db *gorm.DB, r gin.IRouter) {
 	repo := postgresrepo.NewTransactionRepository(db)
 	createUC := usecase.NewCreateTransaction(repo)
 	listUC := usecase.NewListTransactions(repo)
-	h := handler.NewTransactionHandler(createUC, listUC)
+	balanceUC := usecase.NewGetBalance(repo)
+	h := handler.NewTransactionHandler(createUC, listUC, balanceUC)
 
 	r.POST("/transactions", h.Create)
 	r.GET("/transactions", h.List)
+	r.GET("/balance", h.Balance)
 }

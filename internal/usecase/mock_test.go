@@ -8,6 +8,15 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+type mockBalanceRepository struct {
+	mock.Mock
+}
+
+func (m *mockBalanceRepository) Balance(_ context.Context, userID uuid.UUID) (int64, error) {
+	args := m.Called(userID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 type mockCreateTransactionRepository struct {
 	mock.Mock
 }
