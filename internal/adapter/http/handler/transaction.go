@@ -17,12 +17,17 @@ type createUseCase interface {
 	Execute(ctx context.Context, input usecase.CreateInput) (transaction.Transaction, error)
 }
 
-type TransactionHandler struct {
-	createUC createUseCase
+type listUseCase interface {
+	Execute(ctx context.Context, input usecase.ListInput) ([]transaction.Transaction, error)
 }
 
-func NewTransactionHandler(createUC createUseCase) *TransactionHandler {
-	return &TransactionHandler{createUC: createUC}
+type TransactionHandler struct {
+	createUC createUseCase
+	listUC   listUseCase
+}
+
+func NewTransactionHandler(createUC createUseCase, listUC listUseCase) *TransactionHandler {
+	return &TransactionHandler{createUC: createUC, listUC: listUC}
 }
 
 type createRequest struct {
@@ -77,4 +82,43 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 		Type:   t.Type,
 		Amount: t.Amount,
 	})
+}
+
+func (h *TransactionHandler) List(c *gin.Context) {
+	jwtUserID, _ := c.Get(middleware.UserIDKey)
+	userID, err := uuid.Parse(jwtUserID.(string))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id in token"})
+		return
+	}
+
+	var txType *transaction.Type
+	if raw := c.Query("type"); raw != "" {
+		t := transaction.Type(raw)
+		if t != transaction.TypeCredit && t != transaction.TypeDebit {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "type must be CREDIT or DEBIT"})
+			return
+		}
+		txType = &t
+	}
+
+	txs, err := h.listUC.Execute(c.Request.Context(), usecase.ListInput{
+		UserID: userID,
+		Type:   txType,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	resp := make([]transactionResponse, len(txs))
+	for i, t := range txs {
+		resp[i] = transactionResponse{
+			ID:     t.ID.String(),
+			UserID: t.UserID.String(),
+			Type:   t.Type,
+			Amount: t.Amount,
+		}
+	}
+	c.JSON(http.StatusOK, resp)
 }

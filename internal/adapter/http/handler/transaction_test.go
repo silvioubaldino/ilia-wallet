@@ -9,9 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/silvioubaldino/ilia-wallet/internal/adapter/http/middleware"
 	"github.com/silvioubaldino/ilia-wallet/internal/adapter/http/handler"
-	"github.com/silvioubaldino/ilia-wallet/internal/domain"
+	"github.com/silvioubaldino/ilia-wallet/internal/adapter/http/middleware"
+	transaction "github.com/silvioubaldino/ilia-wallet/internal/domain"
 	"github.com/silvioubaldino/ilia-wallet/internal/usecase"
 	"github.com/stretchr/testify/assert"
 )
@@ -36,20 +36,20 @@ func TestTransactionHandler_Create(t *testing.T) {
 		Amount int64  `json:"amount"`
 	}
 	type mocks struct {
-		ucInput    *usecase.CreateInput
-		ucOutput   *transaction.Transaction
-		ucErr      error
-		ucCalled   bool
+		ucInput  *usecase.CreateInput
+		ucOutput *transaction.Transaction
+		ucErr    error
+		ucCalled bool
 	}
 	type expected struct {
 		statusCode int
 	}
 
 	tests := map[string]struct {
-		inputBody      inputBody
-		jwtUserID      string
-		mocks          mocks
-		expected       expected
+		inputBody inputBody
+		jwtUserID string
+		mocks     mocks
+		expected  expected
 	}{
 		"should return 400 when body is missing required fields": {
 			inputBody: inputBody{},
@@ -101,7 +101,7 @@ func TestTransactionHandler_Create(t *testing.T) {
 				uc.On("Execute", *tt.mocks.ucInput).Return(*tt.mocks.ucOutput, tt.mocks.ucErr)
 			}
 
-			h := handler.NewTransactionHandler(uc)
+			h := handler.NewTransactionHandler(uc, &mockListUseCase{})
 
 			router := gin.New()
 			router.POST("/transactions", func(c *gin.Context) {
@@ -113,6 +113,103 @@ func TestTransactionHandler_Create(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, "/transactions", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
+
+			// Act
+			router.ServeHTTP(w, req)
+
+			// Assert
+			assert.Equal(t, tt.expected.statusCode, w.Code)
+			uc.AssertExpectations(t)
+		})
+	}
+}
+
+func TestTransactionHandler_List(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var (
+		userID     = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+		creditType = transaction.TypeCredit
+		txList     = []transaction.Transaction{
+			{
+				ID:     uuid.MustParse("00000000-0000-0000-0000-000000000002"),
+				UserID: userID,
+				Type:   transaction.TypeCredit,
+				Amount: 100,
+			},
+		}
+	)
+
+	type mocks struct {
+		ucInput  usecase.ListInput
+		ucOutput []transaction.Transaction
+		ucErr    error
+	}
+	type expected struct {
+		statusCode int
+	}
+
+	tests := map[string]struct {
+		queryType string
+		mocks     mocks
+		expected  expected
+	}{
+		"should return 400 when type query param is invalid": {
+			queryType: "INVALID",
+			mocks:     mocks{},
+			expected:  expected{statusCode: http.StatusBadRequest},
+		},
+		"should return 500 when usecase fails": {
+			queryType: "",
+			mocks: mocks{
+				ucInput:  usecase.ListInput{UserID: userID, Type: nil},
+				ucOutput: nil,
+				ucErr:    assert.AnError,
+			},
+			expected: expected{statusCode: http.StatusInternalServerError},
+		},
+		"should return 200 with all transactions when no type filter": {
+			queryType: "",
+			mocks: mocks{
+				ucInput:  usecase.ListInput{UserID: userID, Type: nil},
+				ucOutput: txList,
+				ucErr:    nil,
+			},
+			expected: expected{statusCode: http.StatusOK},
+		},
+		"should return 200 with filtered transactions when type is CREDIT": {
+			queryType: "CREDIT",
+			mocks: mocks{
+				ucInput:  usecase.ListInput{UserID: userID, Type: &creditType},
+				ucOutput: txList,
+				ucErr:    nil,
+			},
+			expected: expected{statusCode: http.StatusOK},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Arrange
+			uc := &mockListUseCase{}
+			if tt.expected.statusCode != http.StatusBadRequest {
+				uc.On("Execute", tt.mocks.ucInput).Return(tt.mocks.ucOutput, tt.mocks.ucErr)
+			}
+
+			h := handler.NewTransactionHandler(&mockCreateUseCase{}, uc)
+
+			router := gin.New()
+			router.GET("/transactions", func(c *gin.Context) {
+				c.Set(middleware.UserIDKey, userID.String())
+				h.List(c)
+			})
+
+			url := "/transactions"
+			if tt.queryType != "" {
+				url += "?type=" + tt.queryType
+			}
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, url, nil)
 
 			// Act
 			router.ServeHTTP(w, req)
