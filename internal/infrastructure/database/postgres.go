@@ -40,7 +40,7 @@ func runMigrations(dbURL string) error {
 	if err != nil {
 		return err
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
