@@ -25,3 +25,12 @@ func (m *mockListUseCase) Execute(_ context.Context, input usecase.ListInput) ([
 	args := m.Called(input)
 	return args.Get(0).([]transaction.Transaction), args.Error(1)
 }
+
+type mockBalanceUseCase struct {
+	mock.Mock
+}
+
+func (m *mockBalanceUseCase) Execute(_ context.Context, input usecase.BalanceInput) (int64, error) {
+	args := m.Called(input)
+	return args.Get(0).(int64), args.Error(1)
+}

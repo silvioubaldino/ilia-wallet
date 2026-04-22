@@ -34,3 +34,14 @@ func (r *TransactionRepository) List(ctx context.Context, userID uuid.UUID, txTy
 	}
 	return txs, nil
 }
+
+func (r *TransactionRepository) Balance(ctx context.Context, userID uuid.UUID) (int64, error) {
+	var amount int64
+	err := r.db.WithContext(ctx).
+		Raw("SELECT COALESCE(SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE -amount END), 0) FROM transactions WHERE user_id = ?", userID).
+		Scan(&amount).Error
+	if err != nil {
+		return 0, err
+	}
+	return amount, nil
+}
